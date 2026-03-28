@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Intent Lock</string>
+    <string name="accessibility_service_label">Intent Lock Watcher</string>
+    <string name="accessibility_service_description">Detects blocked apps opening for Intent Lock.</string>
+</resources>
