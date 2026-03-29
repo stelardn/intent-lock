@@ -9,6 +9,10 @@ import android.view.accessibility.AccessibilityEvent
 class SocialAccessibilityService : AccessibilityService() {
     private var lastInterceptedPackage: String? = null
     private var lastInterceptedAt: Long = 0L
+    private val ruleStore by lazy { InterventionRuleStore(this) }
+    private val sessionStore by lazy { ChallengeSessionStore(this) }
+    private val unlockGrantStore by lazy { UnlockGrantStore(this) }
+    private val runtimeValidator by lazy { RuleRuntimeValidator(InstalledAppRepository(this)) }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
@@ -22,8 +26,9 @@ class SocialAccessibilityService : AccessibilityService() {
 
         Log.d(TAG, "Accessibility event from package=$packageName type=${event.eventType}")
 
-        if (packageName != AppConfig.BLOCKED_PACKAGE) return
-        if (UnlockGrantStore(this).isUnlocked(packageName)) {
+        val rule = loadUsableRule() ?: return
+        if (packageName != rule.blockedPackage) return
+        if (unlockGrantStore.isUnlocked(rule.ruleId, packageName)) {
             Log.d(TAG, "Skipping intercept for unlocked package=$packageName")
             return
         }
@@ -48,6 +53,19 @@ class SocialAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d(TAG, "Accessibility service connected")
+    }
+
+    private fun loadUsableRule(): InterventionRule? {
+        val rule = ruleStore.load() ?: return null
+        val validation = runtimeValidator.validateSavedRule(rule)
+        if (validation.isValid) {
+            return rule
+        }
+
+        sessionStore.clear()
+        unlockGrantStore.clear()
+        Log.w(TAG, "Skipping intercept because saved rule is invalid: ${validation.issues}")
+        return null
     }
 
     private fun isDebounced(packageName: String): Boolean {
