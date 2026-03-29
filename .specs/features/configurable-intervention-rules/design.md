@@ -136,7 +136,7 @@ This avoids `QUERY_ALL_PACKAGES` and removes the spike-era dependency on Instagr
 Responsibilities:
 
 - check whether Accessibility permission is enabled for `SocialAccessibilityService`
-- check whether Usage Access is granted
+- check whether Dados de uso is granted
 
 #### `RuleRuntimeValidator`
 
@@ -190,12 +190,12 @@ This satisfies the requirement that the app clearly communicates whether it is r
 Rows:
 
 - Accessibility: `Ready` or `Required`
-- Usage Access: `Ready` or `Required`
+- Dados de uso: `Ready` or `Required`
 
 Actions:
 
 - `Open Accessibility Settings`
-- `Open Usage Access Settings`
+- `Open Dados de uso Settings`
 
 Behavior:
 
@@ -235,7 +235,7 @@ When there is an active session:
 - show blocked app name
 - show control app name
 - show tracked seconds vs required seconds
-- show whether Usage Access is preventing progress calculation
+- show whether Dados de uso is preventing progress calculation
 
 When there is an active unlock grant:
 
@@ -285,9 +285,9 @@ Intent Lock
 
 Readiness
 - Accessibility: Ready / Required
-- Usage Access: Ready / Required
+- Dados de uso: Ready / Required
 [ Open Accessibility Settings ]
-[ Open Usage Access Settings ]
+[ Open Dados de uso Settings ]
 
 Your rule
 - Blocked app: Instagram
@@ -460,7 +460,7 @@ This supports:
 | RULE-07 | Completion flow grants unlock from tracked control-app progress |
 | RULE-08 | Unlock grant bypasses interception until expiry |
 | RULE-09 | Readiness card surfaces missing Accessibility permission |
-| RULE-10 | Readiness card surfaces missing Usage Access permission |
+| RULE-10 | Readiness card surfaces missing Dados de uso permission |
 | RULE-11 | Current activity card shows active challenge or unlock state |
 | RULE-12 | Installed-app validation marks the saved rule invalid |
 | RULE-13 | Clear/replace rule flow stops using the old rule |
