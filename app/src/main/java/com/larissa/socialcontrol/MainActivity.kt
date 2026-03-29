@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -61,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.larissa.socialcontrol.ui.AppIcon
 import com.larissa.socialcontrol.ui.AppPickerDialog
 import com.larissa.socialcontrol.ui.theme.IntentLockTheme
 import java.util.Date
@@ -596,7 +598,7 @@ private fun DashboardHeroCard(
                 }
                 Text(
                     text = "Intenção antes da abertura.",
-                    style = MaterialTheme.typography.headlineLarge,
+                    style = screenHeaderTextStyle(),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
@@ -695,7 +697,7 @@ private fun CreditsCard(credits: List<ActiveCreditUiState>) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProtectedAppsCard(
-    apps: List<String>,
+    apps: List<ProtectedAppUiState>,
     onOpenRules: () -> Unit,
 ) {
     AppSectionCard(
@@ -707,8 +709,8 @@ private fun ProtectedAppsCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            apps.take(6).forEach { appName ->
-                SmallChip(label = appName)
+            apps.take(6).forEach { app ->
+                SmallAppChip(app = app)
             }
             if (apps.size > 6) {
                 SmallChip(label = "+${apps.size - 6}")
@@ -719,6 +721,31 @@ private fun ProtectedAppsCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun SmallAppChip(app: ProtectedAppUiState) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+        shape = RoundedCornerShape(999.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppIcon(
+                packageName = app.packageName,
+                fallbackLabel = app.appName,
+                size = 20.dp,
+            )
+            Text(
+                text = app.appName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -923,8 +950,53 @@ private fun RuleSummaryCard(
 ) {
     AppSectionCard(
         title = rule.blockedAppName,
-        description = "Controle: ${rule.controlAppName}",
+        description = rule.blockedPackage,
+        leadingContent = {
+            AppIcon(
+                packageName = rule.blockedPackage,
+                fallbackLabel = rule.blockedAppName,
+                size = 52.dp,
+            )
+        },
     ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                AppIcon(
+                    packageName = rule.controlPackage,
+                    fallbackLabel = rule.controlAppName,
+                    size = 40.dp,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = "App de controle",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = rule.controlAppName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = rule.controlPackage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1275,16 +1347,32 @@ private fun AppField(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                Text(
-                    text = selection.appName,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = selection.packageName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    AppIcon(
+                        packageName = selection.packageName,
+                        fallbackLabel = selection.appName,
+                        size = 48.dp,
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = selection.appName,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = selection.packageName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 if (!selection.isInstalled) {
                     Text(
                         text = "Este app não está mais instalado.",
@@ -1350,7 +1438,7 @@ private fun ScreenHeaderCard(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.headlineLarge,
+                        style = screenHeaderTextStyle(),
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
@@ -1375,7 +1463,7 @@ private fun ScreenHeaderCard(
                 ) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.headlineLarge,
+                        style = screenHeaderTextStyle(),
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
@@ -1395,6 +1483,7 @@ private fun AppSectionCard(
     title: String,
     description: String,
     modifier: Modifier = Modifier,
+    leadingContent: (@Composable () -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
     showDivider: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
@@ -1420,18 +1509,11 @@ private fun AppSectionCard(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        SectionHeaderText(
+                            title = title,
+                            description = description,
+                            leadingContent = leadingContent,
+                        )
                         action?.invoke()
                     }
                 } else {
@@ -1440,21 +1522,15 @@ private fun AppSectionCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top,
                     ) {
-                        Column(
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(end = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            SectionHeaderText(
+                                title = title,
+                                description = description,
+                                leadingContent = leadingContent,
                             )
                         }
                         action?.invoke()
@@ -1468,6 +1544,66 @@ private fun AppSectionCard(
         }
     }
 }
+
+@Composable
+private fun SectionHeaderText(
+    title: String,
+    description: String,
+    leadingContent: (@Composable () -> Unit)?,
+) {
+    if (leadingContent == null) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = title,
+                style = sectionHeaderTextStyle(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(modifier = Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+            leadingContent()
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = title,
+                style = sectionHeaderTextStyle(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun screenHeaderTextStyle() =
+    MaterialTheme.typography.headlineLarge.copy(
+        fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
+    )
+
+@Composable
+private fun sectionHeaderTextStyle() =
+    MaterialTheme.typography.headlineSmall.copy(
+        fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
+    )
 
 @Composable
 private fun StatusChip(

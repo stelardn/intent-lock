@@ -71,8 +71,13 @@ data class ActiveChallengeUiState(
     val hasUsageAccess: Boolean,
 )
 
+data class ProtectedAppUiState(
+    val packageName: String,
+    val appName: String,
+)
+
 data class DashboardUiState(
-    val protectedApps: List<String> = emptyList(),
+    val protectedApps: List<ProtectedAppUiState> = emptyList(),
     val activeCredits: List<ActiveCreditUiState> = emptyList(),
     val activeChallenges: List<ActiveChallengeUiState> = emptyList(),
     val alerts: List<String> = emptyList(),
@@ -161,7 +166,12 @@ class MainViewModel(
 
         val protectedApps = rules
             .filter { rule -> rule.isEnabled && validations[rule.ruleId]?.isValid == true }
-            .map { it.blockedAppName }
+            .map { rule ->
+                ProtectedAppUiState(
+                    packageName = rule.blockedPackage,
+                    appName = rule.blockedAppName,
+                )
+            }
 
         val alerts = buildAlerts(
             readiness = readiness,

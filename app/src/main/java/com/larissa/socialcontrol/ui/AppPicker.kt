@@ -1,8 +1,6 @@
 package com.larissa.socialcontrol.ui
 
-import android.content.Context
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,10 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
@@ -32,12 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.core.graphics.drawable.toBitmap
 import com.larissa.socialcontrol.InstalledAppInfo
 
 @Composable
@@ -191,7 +183,6 @@ private fun AppPickerRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             AppIcon(
-                context = LocalContext.current,
                 packageName = app.packageName,
                 fallbackLabel = app.label,
             )
@@ -228,47 +219,5 @@ private fun AppPickerRow(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AppIcon(
-    context: Context,
-    packageName: String,
-    fallbackLabel: String,
-) {
-    val imageBitmap = remember(packageName) {
-        runCatching {
-            context.packageManager
-                .getApplicationIcon(packageName)
-                .toBitmap(96, 96)
-                .asImageBitmap()
-        }.getOrNull()
-    }
-
-    if (imageBitmap != null) {
-        Image(
-            bitmap = imageBitmap,
-            contentDescription = null,
-            modifier = Modifier.size(44.dp),
-        )
-        return
-    }
-
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .background(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = CircleShape,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = fallbackLabel.firstOrNull()?.uppercase() ?: "?",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
     }
 }
