@@ -1,6 +1,7 @@
 package com.larissa.socialcontrol.ui
 
 import android.content.Context
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,7 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -29,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,56 +63,95 @@ fun AppPickerDialog(
     }
 
     Dialog(onDismissRequest = onDismissRequest) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            shape = RoundedCornerShape(24.dp),
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surface,
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+                            MaterialTheme.colorScheme.surface,
+                        ),
+                    ),
+                ),
         ) {
-            Column(
+            ElevatedCard(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(16.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+                ),
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Buscar aplicativo") },
-                    singleLine = true,
-                )
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    items(
-                        items = filteredApps,
-                        key = { it.packageName },
-                    ) { app ->
-                        val isDisabled = app.packageName == disabledPackageName
-                        val isSelected = app.packageName == selectedPackageName
-                        AppPickerRow(
-                            app = app,
-                            isSelected = isSelected,
-                            isDisabled = isDisabled,
-                            onClick = {
-                                if (!isDisabled) {
-                                    onSelected(app)
-                                }
-                            },
-                        )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Escolha um app da lista abaixo. O app do outro campo aparece desabilitado para evitar conflitos.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Buscar aplicativo") },
+                        supportingText = {
+                            Text("${filteredApps.size} app(s) encontrado(s)")
+                        },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.large,
+                    )
+                    if (filteredApps.isEmpty()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            shape = MaterialTheme.shapes.large,
+                        ) {
+                            Text(
+                                text = "Nenhum aplicativo combina com a busca atual.",
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(filteredApps, key = { it.packageName }) { app ->
+                                val isDisabled = app.packageName == disabledPackageName
+                                val isSelected = app.packageName == selectedPackageName
+                                AppPickerRow(
+                                    app = app,
+                                    isSelected = isSelected,
+                                    isDisabled = isDisabled,
+                                    onClick = {
+                                        if (!isDisabled) {
+                                            onSelected(app)
+                                        }
+                                    },
+                                )
+                            }
+                        }
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    TextButton(onClick = onDismissRequest) {
-                        Text("Cancelar")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = onDismissRequest) {
+                            Text("Fechar")
+                        }
                     }
                 }
             }
@@ -125,19 +167,26 @@ private fun AppPickerRow(
     onClick: () -> Unit,
 ) {
     val rowAlpha = if (isDisabled) 0.45f else 1f
+    val containerColor = when {
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        isDisabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    }
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .alpha(rowAlpha)
             .clickable(enabled = !isDisabled, onClick = onClick),
-        tonalElevation = if (isSelected) 3.dp else 0.dp,
-        shape = RoundedCornerShape(18.dp),
+        color = containerColor,
+        shape = MaterialTheme.shapes.large,
+        tonalElevation = if (isSelected) 2.dp else 0.dp,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(14.dp)
+                .animateContentSize(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -150,23 +199,31 @@ private fun AppPickerRow(
                 Text(
                     text = app.label,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = app.packageName,
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (isDisabled) {
                     Text(
-                        text = "Já selecionado no outro campo",
+                        text = "Já está em uso no outro campo",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
-                } else if (isSelected) {
+                }
+            }
+            if (isSelected) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = MaterialTheme.shapes.large,
+                ) {
                     Text(
                         text = "Selecionado",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
             }
@@ -211,6 +268,7 @@ private fun AppIcon(
             text = fallbackLabel.firstOrNull()?.uppercase() ?: "?",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
 }
