@@ -8,3 +8,4 @@
 - Se um botão ou CTA no header apertar o texto, empilhe a ação abaixo do bloco textual em telas estreitas.
 - Não aceite layout que quebre palavras importantes de forma ruim, como `Acessibilidade` ou `Permissões`, por compressão horizontal evitável.
 - Em mudanças de UI, preserve responsividade em telas pequenas e valide especialmente headers, títulos longos e chips.
+- Ao criar commits neste repositório, use mensagens no padrão Conventional Commits.

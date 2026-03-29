@@ -26,8 +26,7 @@ class SocialAccessibilityService : AccessibilityService() {
 
         Log.d(TAG, "Accessibility event from package=$packageName type=${event.eventType}")
 
-        val rule = loadUsableRule() ?: return
-        if (packageName != rule.blockedPackage) return
+        val rule = loadUsableRule(packageName) ?: return
         if (unlockGrantStore.isUnlocked(rule.ruleId, packageName)) {
             Log.d(TAG, "Skipping intercept for unlocked package=$packageName")
             return
@@ -37,7 +36,7 @@ class SocialAccessibilityService : AccessibilityService() {
         lastInterceptedPackage = packageName
         lastInterceptedAt = SystemClock.elapsedRealtime()
 
-        val lockIntent = Intent(this, LockActivity::class.java).apply {
+        val lockIntent = LockActivity.createIntent(this, rule.ruleId).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -55,15 +54,19 @@ class SocialAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Accessibility service connected")
     }
 
-    private fun loadUsableRule(): InterventionRule? {
-        val rule = ruleStore.load() ?: return null
-        val validation = runtimeValidator.validateSavedRule(rule)
+    private fun loadUsableRule(blockedPackage: String): InterventionRule? {
+        val allRules = ruleStore.loadAll()
+        val rule = allRules.firstOrNull {
+            it.blockedPackage == blockedPackage && it.isEnabled
+        } ?: return null
+
+        val validation = runtimeValidator.validateSavedRule(rule, allRules)
         if (validation.isValid) {
             return rule
         }
 
-        sessionStore.clear()
-        unlockGrantStore.clear()
+        sessionStore.clearForRule(rule.ruleId)
+        unlockGrantStore.clearForRule(rule.ruleId)
         Log.w(TAG, "Skipping intercept because saved rule is invalid: ${validation.issues}")
         return null
     }

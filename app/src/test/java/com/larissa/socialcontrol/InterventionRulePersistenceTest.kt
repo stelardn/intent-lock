@@ -15,6 +15,7 @@ class InterventionRulePersistenceTest {
             controlAppName = null,
             requiredSeconds = 30,
             unlockWindowMinutes = 10,
+            isEnabled = true,
             savedAtEpochMs = 123L,
         )
 

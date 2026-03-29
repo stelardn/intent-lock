@@ -8,6 +8,7 @@ data class InterventionRule(
     val controlAppName: String,
     val requiredSeconds: Int,
     val unlockWindowMinutes: Int,
+    val isEnabled: Boolean,
     val savedAtEpochMs: Long,
 )
 
@@ -18,6 +19,7 @@ data class InterventionRuleDraft(
     val controlAppName: String,
     val requiredSeconds: Int,
     val unlockWindowMinutes: Int,
+    val isEnabled: Boolean = true,
 )
 
 fun InterventionRule.toDraft(): InterventionRuleDraft {
@@ -28,6 +30,7 @@ fun InterventionRule.toDraft(): InterventionRuleDraft {
         controlAppName = controlAppName,
         requiredSeconds = requiredSeconds,
         unlockWindowMinutes = unlockWindowMinutes,
+        isEnabled = isEnabled,
     )
 }
 

@@ -6,6 +6,35 @@ import org.junit.Test
 
 class RuleRuntimeValidatorTest {
     @Test
+    fun `blocked app cannot be reused by another rule`() {
+        val validator = RuleRuntimeValidator(FakeInstalledAppLookup())
+
+        val result = validator.validateDraft(
+            input = RuleDraftValidationInput(
+                blockedPackage = "com.blocked",
+                controlPackage = "com.other-control",
+                requiredSeconds = 30,
+                unlockWindowMinutes = 10,
+            ),
+            existingRules = listOf(
+                InterventionRule(
+                    ruleId = "rule-1",
+                    blockedPackage = "com.blocked",
+                    blockedAppName = "Blocked",
+                    controlPackage = "com.control",
+                    controlAppName = "Control",
+                    requiredSeconds = 30,
+                    unlockWindowMinutes = 10,
+                    isEnabled = true,
+                    savedAtEpochMs = 123L,
+                ),
+            ),
+        )
+
+        assertTrue(result.hasIssue(RuleValidationIssue.BLOCKED_APP_ALREADY_USED))
+    }
+
+    @Test
     fun `same app is rejected in draft validation`() {
         val validator = RuleRuntimeValidator(FakeInstalledAppLookup())
 
@@ -51,6 +80,7 @@ class RuleRuntimeValidatorTest {
             controlAppName = "Control",
             requiredSeconds = 30,
             unlockWindowMinutes = 10,
+            isEnabled = true,
             savedAtEpochMs = 123L,
         )
 

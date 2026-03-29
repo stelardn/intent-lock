@@ -3,6 +3,7 @@ package com.larissa.socialcontrol
 enum class RuleValidationIssue {
     BLOCKED_APP_REQUIRED,
     CONTROL_APP_REQUIRED,
+    BLOCKED_APP_ALREADY_USED,
     APPS_MUST_DIFFER,
     REQUIRED_SECONDS_OUT_OF_RANGE,
     UNLOCK_WINDOW_OUT_OF_RANGE,
@@ -29,13 +30,24 @@ data class RuleDraftValidationInput(
 class RuleRuntimeValidator(
     private val installedAppLookup: InstalledAppLookup,
 ) {
-    fun validateDraft(input: RuleDraftValidationInput): RuleValidationResult {
+    fun validateDraft(
+        input: RuleDraftValidationInput,
+        existingRules: List<InterventionRule> = emptyList(),
+        editingRuleId: String? = null,
+    ): RuleValidationResult {
         val issues = buildSet {
             if (input.blockedPackage.isNullOrBlank()) {
                 add(RuleValidationIssue.BLOCKED_APP_REQUIRED)
             }
             if (input.controlPackage.isNullOrBlank()) {
                 add(RuleValidationIssue.CONTROL_APP_REQUIRED)
+            }
+            if (!input.blockedPackage.isNullOrBlank() &&
+                existingRules.any {
+                    it.ruleId != editingRuleId && it.blockedPackage == input.blockedPackage
+                }
+            ) {
+                add(RuleValidationIssue.BLOCKED_APP_ALREADY_USED)
             }
 
             if (!input.blockedPackage.isNullOrBlank() &&
@@ -58,7 +70,10 @@ class RuleRuntimeValidator(
         return RuleValidationResult(issues)
     }
 
-    fun validateSavedRule(rule: InterventionRule): RuleValidationResult {
+    fun validateSavedRule(
+        rule: InterventionRule,
+        allRules: List<InterventionRule> = emptyList(),
+    ): RuleValidationResult {
         val issues = validateDraft(
             RuleDraftValidationInput(
                 blockedPackage = rule.blockedPackage,
@@ -66,6 +81,8 @@ class RuleRuntimeValidator(
                 requiredSeconds = rule.requiredSeconds,
                 unlockWindowMinutes = rule.unlockWindowMinutes,
             ),
+            existingRules = allRules,
+            editingRuleId = rule.ruleId,
         ).issues.toMutableSet()
 
         if (!installedAppLookup.isPackageInstalled(rule.blockedPackage)) {

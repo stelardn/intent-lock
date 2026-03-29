@@ -104,7 +104,7 @@ fun AppPickerDialog(
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Buscar aplicativo") },
+                        label = { Text("Buscar app") },
                         supportingText = {
                             Text("${filteredApps.size} app(s) encontrado(s)")
                         },

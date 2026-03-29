@@ -8,12 +8,18 @@ import androidx.lifecycle.AndroidViewModel
 
 enum class HeroStatus {
     NOT_CONFIGURED,
-    CONFIGURED_MISSING_PERMISSIONS,
+    MISSING_PERMISSIONS,
     READY,
     CHALLENGE_IN_PROGRESS,
-    UNLOCKED,
-    CREDITS_EXHAUSTED,
-    SAVED_RULE_INVALID,
+    CREDITS_ACTIVE,
+    RULES_WITH_PROBLEM,
+}
+
+enum class RuleCardStatus {
+    ACTIVE,
+    INACTIVE,
+    INVALID,
+    PERMISSIONS_INCOMPLETE,
 }
 
 data class SelectedApp(
@@ -22,11 +28,54 @@ data class SelectedApp(
     val isInstalled: Boolean = true,
 )
 
-data class RuleDraftUiState(
+data class RuleEditorUiState(
+    val editingRuleId: String? = null,
     val blockedApp: SelectedApp? = null,
     val controlApp: SelectedApp? = null,
     val requiredSecondsInput: String = AppConfig.DEFAULT_REQUIRED_SECONDS.toString(),
     val unlockWindowMinutesInput: String = AppConfig.DEFAULT_UNLOCK_WINDOW_MINUTES.toString(),
+    val isEnabled: Boolean = true,
+    val validation: RuleValidationResult = RuleValidationResult(),
+    val isSaveEnabled: Boolean = false,
+) {
+    val isCreating: Boolean
+        get() = editingRuleId == null
+}
+
+data class RuleCardUiState(
+    val ruleId: String,
+    val blockedAppName: String,
+    val blockedPackage: String,
+    val controlAppName: String,
+    val controlPackage: String,
+    val requiredSeconds: Int,
+    val unlockWindowMinutes: Int,
+    val isEnabled: Boolean,
+    val status: RuleCardStatus,
+    val validation: RuleValidationResult,
+)
+
+data class ActiveCreditUiState(
+    val ruleId: String,
+    val blockedAppName: String,
+    val expiresAtEpochMs: Long,
+    val unlockWindowMinutes: Int,
+)
+
+data class ActiveChallengeUiState(
+    val ruleId: String,
+    val blockedAppName: String,
+    val controlAppName: String,
+    val trackedSeconds: Int,
+    val requiredSeconds: Int,
+    val hasUsageAccess: Boolean,
+)
+
+data class DashboardUiState(
+    val protectedApps: List<String> = emptyList(),
+    val activeCredits: List<ActiveCreditUiState> = emptyList(),
+    val activeChallenges: List<ActiveChallengeUiState> = emptyList(),
+    val alerts: List<String> = emptyList(),
 )
 
 data class MainUiState(
@@ -35,20 +84,12 @@ data class MainUiState(
         accessibilityEnabled = false,
         usageAccessEnabled = false,
     ),
-    val savedRule: InterventionRule? = null,
-    val savedRuleValidation: RuleValidationResult = RuleValidationResult(),
     val installedApps: List<InstalledAppInfo> = emptyList(),
-    val draft: RuleDraftUiState = RuleDraftUiState(),
-    val draftValidation: RuleValidationResult = RuleValidationResult(),
-    val isSaveEnabled: Boolean = false,
-    val session: ChallengeSession? = null,
-    val progress: ChallengeProgress? = null,
-    val unlockGrant: UnlockGrant? = null,
-    val expiredCredit: ExpiredUnlockCredit? = null,
-) {
-    val canClearRule: Boolean
-        get() = savedRule != null || session != null || unlockGrant != null
-}
+    val storedRules: List<InterventionRule> = emptyList(),
+    val rules: List<RuleCardUiState> = emptyList(),
+    val dashboard: DashboardUiState = DashboardUiState(),
+    val editor: RuleEditorUiState? = null,
+)
 
 class MainViewModel(
     application: Application,
@@ -61,8 +102,6 @@ class MainViewModel(
     private val challengeTracker = UsageStatsChallengeTracker(application)
     private val runtimeValidator = RuleRuntimeValidator(installedAppRepository)
 
-    private var hasInitializedDraft = false
-
     var uiState by mutableStateOf(MainUiState())
         private set
 
@@ -72,181 +111,290 @@ class MainViewModel(
 
     fun refresh() {
         val installedApps = installedAppRepository.getLaunchableApps()
-        val savedRule = ruleStore.load()
-        val savedRuleValidation = savedRule?.let(runtimeValidator::validateSavedRule)
-            ?: RuleValidationResult()
         val readiness = permissionStatusRepository.getReadiness()
-        val draftBase = when {
-            !hasInitializedDraft -> ruleToDraftUiState(savedRule)
-            !draftDiffersFrom(uiState.savedRule, uiState.draft) -> ruleToDraftUiState(savedRule)
-            else -> uiState.draft
-        }
-        val draft = reconcileDraftSelections(draftBase, installedApps)
-        val draftValidation = validateDraft(draft)
-
-        val usableRule = savedRule?.takeIf { savedRuleValidation.isValid }
-        if (usableRule == null) {
-            sessionStore.clear()
-            unlockGrantStore.clear()
+        val rules = ruleStore.loadAll().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.blockedAppName })
+        val validations = rules.associate { rule ->
+            rule.ruleId to runtimeValidator.validateSavedRule(rule, rules)
         }
 
-        var session = usableRule?.let { sessionStore.loadForRule(it.ruleId) }
-        var progress = session?.let(challengeTracker::calculateProgress)
+        clearStaleTransientState(validRuleIds = rules.map { it.ruleId }.toSet())
 
-        if (usableRule != null &&
-            session != null &&
-            progress?.isComplete == true &&
-            session.completedAtEpochMs == null
-        ) {
-            val completedAt = System.currentTimeMillis()
-            sessionStore.markCompleted(completedAt)
-            unlockGrantStore.save(
-                UnlockGrant(
-                    ruleId = usableRule.ruleId,
-                    blockedPackage = usableRule.blockedPackage,
-                    expiresAtEpochMs = completedAt + usableRule.unlockWindowMinutes * 60_000L,
-                ),
-            )
-            session = sessionStore.loadForRule(usableRule.ruleId)
-            progress = session?.let(challengeTracker::calculateProgress)
-        }
+        val disabledOrInvalidRuleIds = rules
+            .filter { rule -> !rule.isEnabled || validations[rule.ruleId]?.isValid != true }
+            .map { it.ruleId }
+            .toSet()
+        sessionStore.clearForRules(disabledOrInvalidRuleIds)
+        unlockGrantStore.clearForRules(disabledOrInvalidRuleIds)
 
-        val unlockGrant = usableRule?.let {
-            unlockGrantStore.loadForRule(
-                ruleId = it.ruleId,
-                blockedPackage = it.blockedPackage,
-            )
-        }
-        val expiredCredit = usableRule?.let {
-            unlockGrantStore.loadExpiredCreditForRule(
-                ruleId = it.ruleId,
-                blockedPackage = it.blockedPackage,
+        completeFinishedChallenges(rules = rules, validations = validations)
+
+        val activeSessions = sessionStore.loadAll()
+            .filter { session -> rules.any { it.ruleId == session.ruleId } }
+            .sortedByDescending { it.startedAtEpochMs }
+        val activeGrants = unlockGrantStore.loadAllActive()
+            .filter { grant -> rules.any { it.ruleId == grant.ruleId } }
+            .sortedBy { it.expiresAtEpochMs }
+
+        val rulesById = rules.associateBy { it.ruleId }
+        val challengeSummaries = activeSessions.mapNotNull { session ->
+            val rule = rulesById[session.ruleId] ?: return@mapNotNull null
+            val progress = challengeTracker.calculateProgress(session)
+            ActiveChallengeUiState(
+                ruleId = rule.ruleId,
+                blockedAppName = rule.blockedAppName,
+                controlAppName = rule.controlAppName,
+                trackedSeconds = progress.trackedSeconds,
+                requiredSeconds = progress.requiredSeconds,
+                hasUsageAccess = progress.hasUsageAccess,
             )
         }
 
-        hasInitializedDraft = true
+        val creditSummaries = activeGrants.mapNotNull { grant ->
+            val rule = rulesById[grant.ruleId] ?: return@mapNotNull null
+            ActiveCreditUiState(
+                ruleId = rule.ruleId,
+                blockedAppName = rule.blockedAppName,
+                expiresAtEpochMs = grant.expiresAtEpochMs,
+                unlockWindowMinutes = rule.unlockWindowMinutes,
+            )
+        }
+
+        val protectedApps = rules
+            .filter { rule -> rule.isEnabled && validations[rule.ruleId]?.isValid == true }
+            .map { it.blockedAppName }
+
+        val alerts = buildAlerts(
+            readiness = readiness,
+            rules = rules,
+            validations = validations,
+        )
+
+        val editor = reconcileEditor(
+            editor = uiState.editor,
+            installedApps = installedApps,
+            existingRules = rules,
+        )
+
         uiState = MainUiState(
             heroStatus = resolveHeroStatus(
-                savedRule = savedRule,
-                savedRuleValidation = savedRuleValidation,
+                rules = rules,
+                validations = validations,
                 readiness = readiness,
-                session = session,
-                unlockGrant = unlockGrant,
-                expiredCredit = expiredCredit,
+                activeChallenges = challengeSummaries,
+                activeCredits = creditSummaries,
             ),
             readiness = readiness,
-            savedRule = savedRule,
-            savedRuleValidation = savedRuleValidation,
             installedApps = installedApps,
-            draft = draft,
-            draftValidation = draftValidation,
-            isSaveEnabled = draftValidation.isValid && draftDiffersFrom(savedRule, draft),
-            session = session,
-            progress = progress,
-            unlockGrant = unlockGrant,
-            expiredCredit = expiredCredit,
+            storedRules = rules,
+            rules = rules.map { rule ->
+                RuleCardUiState(
+                    ruleId = rule.ruleId,
+                    blockedAppName = rule.blockedAppName,
+                    blockedPackage = rule.blockedPackage,
+                    controlAppName = rule.controlAppName,
+                    controlPackage = rule.controlPackage,
+                    requiredSeconds = rule.requiredSeconds,
+                    unlockWindowMinutes = rule.unlockWindowMinutes,
+                    isEnabled = rule.isEnabled,
+                    status = resolveRuleStatus(
+                        rule = rule,
+                        validation = validations.getValue(rule.ruleId),
+                        readiness = readiness,
+                    ),
+                    validation = validations.getValue(rule.ruleId),
+                )
+            },
+            dashboard = DashboardUiState(
+                protectedApps = protectedApps,
+                activeCredits = creditSummaries,
+                activeChallenges = challengeSummaries,
+                alerts = alerts,
+            ),
+            editor = editor,
         )
+    }
+
+    fun startCreatingRule() {
+        uiState = uiState.copy(
+            editor = validateEditor(
+                editor = RuleEditorUiState(),
+                existingRules = uiState.storedRules,
+                installedApps = uiState.installedApps,
+            ),
+        )
+    }
+
+    fun startEditingRule(ruleId: String) {
+        val rule = uiState.storedRules.firstOrNull { it.ruleId == ruleId } ?: return
+        uiState = uiState.copy(
+            editor = validateEditor(
+                editor = RuleEditorUiState(
+                    editingRuleId = rule.ruleId,
+                    blockedApp = SelectedApp(
+                        packageName = rule.blockedPackage,
+                        appName = rule.blockedAppName,
+                    ),
+                    controlApp = SelectedApp(
+                        packageName = rule.controlPackage,
+                        appName = rule.controlAppName,
+                    ),
+                    requiredSecondsInput = rule.requiredSeconds.toString(),
+                    unlockWindowMinutesInput = rule.unlockWindowMinutes.toString(),
+                    isEnabled = rule.isEnabled,
+                ),
+                existingRules = uiState.storedRules,
+                installedApps = uiState.installedApps,
+            ),
+        )
+    }
+
+    fun cancelEditing() {
+        uiState = uiState.copy(editor = null)
     }
 
     fun onBlockedAppSelected(app: InstalledAppInfo) {
-        updateDraft(uiState.draft.copy(blockedApp = app.toSelectedApp()))
+        updateEditor { it.copy(blockedApp = app.toSelectedApp()) }
     }
 
     fun onBlockedAppCleared() {
-        updateDraft(uiState.draft.copy(blockedApp = null))
+        updateEditor { it.copy(blockedApp = null) }
     }
 
     fun onControlAppSelected(app: InstalledAppInfo) {
-        updateDraft(uiState.draft.copy(controlApp = app.toSelectedApp()))
+        updateEditor { it.copy(controlApp = app.toSelectedApp()) }
     }
 
     fun onControlAppCleared() {
-        updateDraft(uiState.draft.copy(controlApp = null))
+        updateEditor { it.copy(controlApp = null) }
     }
 
     fun onRequiredSecondsChanged(value: String) {
-        updateDraft(
-            uiState.draft.copy(
-                requiredSecondsInput = value.filter(Char::isDigit).take(3),
-            ),
-        )
+        updateEditor {
+            it.copy(requiredSecondsInput = value.filter(Char::isDigit).take(3))
+        }
     }
 
     fun onUnlockWindowMinutesChanged(value: String) {
-        updateDraft(
-            uiState.draft.copy(
-                unlockWindowMinutesInput = value.filter(Char::isDigit).take(2),
-            ),
-        )
+        updateEditor {
+            it.copy(unlockWindowMinutesInput = value.filter(Char::isDigit).take(2))
+        }
+    }
+
+    fun onRuleEnabledChanged(enabled: Boolean) {
+        updateEditor { it.copy(isEnabled = enabled) }
     }
 
     fun saveRule() {
-        val draft = uiState.draft
-        val blockedApp = draft.blockedApp ?: return
-        val controlApp = draft.controlApp ?: return
-        if (!uiState.isSaveEnabled) return
+        val editor = uiState.editor ?: return
+        if (!editor.isSaveEnabled) return
 
-        ruleStore.save(
-            InterventionRuleDraft(
+        val blockedApp = editor.blockedApp ?: return
+        val controlApp = editor.controlApp ?: return
+
+        val savedRule = ruleStore.upsert(
+            draft = InterventionRuleDraft(
                 blockedPackage = blockedApp.packageName,
                 blockedAppName = blockedApp.appName,
                 controlPackage = controlApp.packageName,
                 controlAppName = controlApp.appName,
-                requiredSeconds = draft.requiredSecondsInput.toInt(),
-                unlockWindowMinutes = draft.unlockWindowMinutesInput.toInt(),
+                requiredSeconds = editor.requiredSecondsInput.toInt(),
+                unlockWindowMinutes = editor.unlockWindowMinutesInput.toInt(),
+                isEnabled = editor.isEnabled,
             ),
+            ruleId = editor.editingRuleId,
         )
-        sessionStore.clear()
-        unlockGrantStore.clear()
-        hasInitializedDraft = false
+
+        sessionStore.clearForRule(savedRule.ruleId)
+        unlockGrantStore.clearForRule(savedRule.ruleId)
+        uiState = uiState.copy(editor = null)
         refresh()
     }
 
-    fun clearRule() {
-        ruleStore.clear()
-        sessionStore.clear()
-        unlockGrantStore.clear()
-        hasInitializedDraft = false
+    fun deleteRule(ruleId: String) {
+        ruleStore.delete(ruleId)
+        sessionStore.clearForRule(ruleId)
+        unlockGrantStore.clearForRule(ruleId)
+        if (uiState.editor?.editingRuleId == ruleId) {
+            uiState = uiState.copy(editor = null)
+        }
         refresh()
     }
 
-    private fun updateDraft(nextDraft: RuleDraftUiState) {
-        val draft = reconcileDraftSelections(nextDraft, uiState.installedApps)
-        val draftValidation = validateDraft(draft)
+    fun toggleRuleEnabled(ruleId: String) {
+        val rule = uiState.storedRules.firstOrNull { it.ruleId == ruleId } ?: return
+        val updatedRule = ruleStore.upsert(
+            draft = rule.toDraft().copy(isEnabled = !rule.isEnabled),
+            ruleId = rule.ruleId,
+        )
+        if (!updatedRule.isEnabled) {
+            sessionStore.clearForRule(updatedRule.ruleId)
+            unlockGrantStore.clearForRule(updatedRule.ruleId)
+        }
+        refresh()
+    }
+
+    private fun updateEditor(transform: (RuleEditorUiState) -> RuleEditorUiState) {
+        val editor = uiState.editor ?: return
         uiState = uiState.copy(
-            draft = draft,
-            draftValidation = draftValidation,
-            isSaveEnabled = draftValidation.isValid && draftDiffersFrom(uiState.savedRule, draft),
+            editor = validateEditor(
+                editor = transform(editor),
+                existingRules = uiState.storedRules,
+                installedApps = uiState.installedApps,
+            ),
         )
     }
 
-    private fun validateDraft(draft: RuleDraftUiState): RuleValidationResult {
+    private fun validateEditor(
+        editor: RuleEditorUiState,
+        existingRules: List<InterventionRule>,
+        installedApps: List<InstalledAppInfo>,
+    ): RuleEditorUiState {
+        val reconciledEditor = editor.copy(
+            blockedApp = reconcileSelection(editor.blockedApp, installedApps),
+            controlApp = reconcileSelection(editor.controlApp, installedApps),
+        )
+
         val issues = runtimeValidator.validateDraft(
-            RuleDraftValidationInput(
-                blockedPackage = draft.blockedApp?.packageName,
-                controlPackage = draft.controlApp?.packageName,
-                requiredSeconds = draft.requiredSecondsInput.toIntOrNull(),
-                unlockWindowMinutes = draft.unlockWindowMinutesInput.toIntOrNull(),
+            input = RuleDraftValidationInput(
+                blockedPackage = reconciledEditor.blockedApp?.packageName,
+                controlPackage = reconciledEditor.controlApp?.packageName,
+                requiredSeconds = reconciledEditor.requiredSecondsInput.toIntOrNull(),
+                unlockWindowMinutes = reconciledEditor.unlockWindowMinutesInput.toIntOrNull(),
             ),
+            existingRules = existingRules,
+            editingRuleId = reconciledEditor.editingRuleId,
         ).issues.toMutableSet()
 
-        if (draft.blockedApp != null && !draft.blockedApp.isInstalled) {
+        if (reconciledEditor.blockedApp != null && !reconciledEditor.blockedApp.isInstalled) {
             issues += RuleValidationIssue.BLOCKED_APP_NOT_INSTALLED
         }
-        if (draft.controlApp != null && !draft.controlApp.isInstalled) {
+        if (reconciledEditor.controlApp != null && !reconciledEditor.controlApp.isInstalled) {
             issues += RuleValidationIssue.CONTROL_APP_NOT_INSTALLED
         }
 
-        return RuleValidationResult(issues)
+        val validation = RuleValidationResult(issues)
+        return reconciledEditor.copy(
+            validation = validation,
+            isSaveEnabled = validation.isValid && editorDiffersFromSaved(reconciledEditor, existingRules),
+        )
     }
 
-    private fun reconcileDraftSelections(
-        draft: RuleDraftUiState,
+    private fun reconcileEditor(
+        editor: RuleEditorUiState?,
         installedApps: List<InstalledAppInfo>,
-    ): RuleDraftUiState {
-        return draft.copy(
-            blockedApp = reconcileSelection(draft.blockedApp, installedApps),
-            controlApp = reconcileSelection(draft.controlApp, installedApps),
+        existingRules: List<InterventionRule>,
+    ): RuleEditorUiState? {
+        if (editor == null) return null
+        if (editor.editingRuleId != null &&
+            existingRules.none { it.ruleId == editor.editingRuleId }
+        ) {
+            return null
+        }
+
+        return validateEditor(
+            editor = editor,
+            existingRules = existingRules,
+            installedApps = installedApps,
         )
     }
 
@@ -263,59 +411,125 @@ class MainViewModel(
         }
     }
 
-    private fun ruleToDraftUiState(rule: InterventionRule?): RuleDraftUiState {
-        if (rule == null) {
-            return RuleDraftUiState()
+    private fun editorDiffersFromSaved(
+        editor: RuleEditorUiState,
+        existingRules: List<InterventionRule>,
+    ): Boolean {
+        val savedRule = editor.editingRuleId?.let { ruleId ->
+            existingRules.firstOrNull { it.ruleId == ruleId }
         }
 
-        return RuleDraftUiState(
-            blockedApp = SelectedApp(
-                packageName = rule.blockedPackage,
-                appName = rule.blockedAppName,
-            ),
-            controlApp = SelectedApp(
-                packageName = rule.controlPackage,
-                appName = rule.controlAppName,
-            ),
-            requiredSecondsInput = rule.requiredSeconds.toString(),
-            unlockWindowMinutesInput = rule.unlockWindowMinutes.toString(),
-        )
+        if (savedRule == null) {
+            return editor.blockedApp != null ||
+                editor.controlApp != null ||
+                editor.requiredSecondsInput != AppConfig.DEFAULT_REQUIRED_SECONDS.toString() ||
+                editor.unlockWindowMinutesInput != AppConfig.DEFAULT_UNLOCK_WINDOW_MINUTES.toString() ||
+                !editor.isEnabled
+        }
+
+        return savedRule.blockedPackage != editor.blockedApp?.packageName ||
+            savedRule.blockedAppName != editor.blockedApp?.appName ||
+            savedRule.controlPackage != editor.controlApp?.packageName ||
+            savedRule.controlAppName != editor.controlApp?.appName ||
+            savedRule.requiredSeconds.toString() != editor.requiredSecondsInput ||
+            savedRule.unlockWindowMinutes.toString() != editor.unlockWindowMinutesInput ||
+            savedRule.isEnabled != editor.isEnabled
+    }
+
+    private fun clearStaleTransientState(validRuleIds: Set<String>) {
+        val staleSessionIds = sessionStore.loadAll()
+            .map { it.ruleId }
+            .filterNot { it in validRuleIds }
+            .toSet()
+        sessionStore.clearForRules(staleSessionIds)
+
+        val staleGrantIds = (
+            unlockGrantStore.loadAllActive().map { it.ruleId } +
+                unlockGrantStore.loadExpiredCredits().map { it.ruleId }
+            )
+            .filterNot { it in validRuleIds }
+            .toSet()
+        unlockGrantStore.clearForRules(staleGrantIds)
+    }
+
+    private fun completeFinishedChallenges(
+        rules: List<InterventionRule>,
+        validations: Map<String, RuleValidationResult>,
+    ) {
+        val rulesById = rules.associateBy { it.ruleId }
+        sessionStore.loadAll().forEach { session ->
+            val rule = rulesById[session.ruleId] ?: return@forEach
+            val validation = validations[rule.ruleId] ?: return@forEach
+            if (!rule.isEnabled || !validation.isValid) {
+                sessionStore.clearForRule(rule.ruleId)
+                unlockGrantStore.clearForRule(rule.ruleId)
+                return@forEach
+            }
+
+            val progress = challengeTracker.calculateProgress(session)
+            if (progress.isComplete) {
+                val completedAt = System.currentTimeMillis()
+                unlockGrantStore.save(
+                    UnlockGrant(
+                        ruleId = rule.ruleId,
+                        blockedPackage = rule.blockedPackage,
+                        expiresAtEpochMs = completedAt + rule.unlockWindowMinutes * 60_000L,
+                    ),
+                )
+                sessionStore.clearForRule(rule.ruleId)
+            }
+        }
+    }
+
+    private fun buildAlerts(
+        readiness: PermissionReadiness,
+        rules: List<InterventionRule>,
+        validations: Map<String, RuleValidationResult>,
+    ): List<String> {
+        return buildList {
+            val invalidRuleCount = rules.count { validations[it.ruleId]?.isValid == false }
+            if (invalidRuleCount > 0) {
+                add(
+                    if (invalidRuleCount == 1) {
+                        "1 regra precisa ser revisada."
+                    } else {
+                        "$invalidRuleCount regras precisam ser revisadas."
+                    },
+                )
+            }
+            if (!readiness.accessibilityEnabled) {
+                add("A acessibilidade precisa ser ativada.")
+            }
+            if (!readiness.usageAccessEnabled) {
+                add("Dados de uso ainda não estão ativos.")
+            }
+        }
     }
 
     private fun resolveHeroStatus(
-        savedRule: InterventionRule?,
-        savedRuleValidation: RuleValidationResult,
+        rules: List<InterventionRule>,
+        validations: Map<String, RuleValidationResult>,
         readiness: PermissionReadiness,
-        session: ChallengeSession?,
-        unlockGrant: UnlockGrant?,
-        expiredCredit: ExpiredUnlockCredit?,
+        activeChallenges: List<ActiveChallengeUiState>,
+        activeCredits: List<ActiveCreditUiState>,
     ): HeroStatus {
-        if (savedRule == null) return HeroStatus.NOT_CONFIGURED
-        if (!savedRuleValidation.isValid) return HeroStatus.SAVED_RULE_INVALID
-        if (unlockGrant != null) return HeroStatus.UNLOCKED
-        if (session != null) return HeroStatus.CHALLENGE_IN_PROGRESS
-        if (expiredCredit != null) return HeroStatus.CREDITS_EXHAUSTED
-        if (!readiness.isFullyReady) return HeroStatus.CONFIGURED_MISSING_PERMISSIONS
+        if (rules.isEmpty()) return HeroStatus.NOT_CONFIGURED
+        if (activeChallenges.isNotEmpty()) return HeroStatus.CHALLENGE_IN_PROGRESS
+        if (activeCredits.isNotEmpty()) return HeroStatus.CREDITS_ACTIVE
+        if (rules.any { validations[it.ruleId]?.isValid == false }) return HeroStatus.RULES_WITH_PROBLEM
+        if (!readiness.isFullyReady) return HeroStatus.MISSING_PERMISSIONS
         return HeroStatus.READY
     }
 
-    private fun draftDiffersFrom(
-        savedRule: InterventionRule?,
-        draft: RuleDraftUiState,
-    ): Boolean {
-        if (savedRule == null) {
-            return draft.blockedApp != null ||
-                draft.controlApp != null ||
-                draft.requiredSecondsInput != AppConfig.DEFAULT_REQUIRED_SECONDS.toString() ||
-                draft.unlockWindowMinutesInput != AppConfig.DEFAULT_UNLOCK_WINDOW_MINUTES.toString()
-        }
-
-        return savedRule.blockedPackage != draft.blockedApp?.packageName ||
-            savedRule.blockedAppName != draft.blockedApp?.appName ||
-            savedRule.controlPackage != draft.controlApp?.packageName ||
-            savedRule.controlAppName != draft.controlApp?.appName ||
-            savedRule.requiredSeconds.toString() != draft.requiredSecondsInput ||
-            savedRule.unlockWindowMinutes.toString() != draft.unlockWindowMinutesInput
+    private fun resolveRuleStatus(
+        rule: InterventionRule,
+        validation: RuleValidationResult,
+        readiness: PermissionReadiness,
+    ): RuleCardStatus {
+        if (!validation.isValid) return RuleCardStatus.INVALID
+        if (!rule.isEnabled) return RuleCardStatus.INACTIVE
+        if (!readiness.isFullyReady) return RuleCardStatus.PERMISSIONS_INCOMPLETE
+        return RuleCardStatus.ACTIVE
     }
 }
 

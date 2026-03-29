@@ -1,5 +1,6 @@
 package com.larissa.socialcontrol
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -48,9 +49,11 @@ class LockActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val ruleId = intent.getStringExtra(EXTRA_RULE_ID)
+
         setContent {
             IntentLockTheme {
-                var screenState by remember { mutableStateOf(loadInitialState()) }
+                var screenState by remember(ruleId) { mutableStateOf(loadInitialState(ruleId)) }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     LockScreen(
@@ -63,7 +66,7 @@ class LockActivity : ComponentActivity() {
 
                             if (launchIntent == null) {
                                 screenState = LockScreenState.Recovery(
-                                    message = "Não foi possível abrir ${rule.controlAppName}. Revise a configuração na tela inicial.",
+                                    message = "Não foi possível abrir ${rule.controlAppName}. Revise a regra em Regras.",
                                 )
                                 return@LockScreen
                             }
@@ -95,22 +98,46 @@ class LockActivity : ComponentActivity() {
         }
     }
 
-    private fun loadInitialState(): LockScreenState {
-        val rule = ruleStore.load()
+    private fun loadInitialState(ruleId: String?): LockScreenState {
+        if (ruleId.isNullOrBlank()) {
+            return LockScreenState.Recovery(
+                message = "Não foi possível identificar a regra que deveria bloquear este app. Volte ao IntentLock e tente novamente.",
+            )
+        }
+
+        val rule = ruleStore.load(ruleId)
             ?: return LockScreenState.Recovery(
-                message = "Nenhuma regra válida foi encontrada. Volte para a tela inicial e configure o bloqueio.",
+                message = "A regra selecionada não foi encontrada. Revise sua lista em Regras.",
             )
 
-        val validation = runtimeValidator.validateSavedRule(rule)
-        if (!validation.isValid) {
-            sessionStore.clear()
-            unlockGrantStore.clear()
+        if (!rule.isEnabled) {
+            sessionStore.clearForRule(rule.ruleId)
+            unlockGrantStore.clearForRule(rule.ruleId)
             return LockScreenState.Recovery(
-                message = "A regra salva ficou inválida. Revise os aplicativos escolhidos e salve novamente.",
+                message = "Essa regra está inativa no momento. Reative-a em Regras para voltar a proteger ${rule.blockedAppName}.",
+            )
+        }
+
+        val validation = runtimeValidator.validateSavedRule(rule, ruleStore.loadAll())
+        if (!validation.isValid) {
+            sessionStore.clearForRule(rule.ruleId)
+            unlockGrantStore.clearForRule(rule.ruleId)
+            return LockScreenState.Recovery(
+                message = "A regra salva ficou inválida. Revise os apps escolhidos e salve novamente.",
             )
         }
 
         return LockScreenState.Ready(rule)
+    }
+
+    companion object {
+        private const val EXTRA_RULE_ID = "extra_rule_id"
+
+        fun createIntent(context: Context, ruleId: String): Intent {
+            return Intent(context, LockActivity::class.java).apply {
+                putExtra(EXTRA_RULE_ID, ruleId)
+            }
+        }
     }
 }
 
@@ -200,7 +227,7 @@ private fun LockScreen(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = onReturnToApp,
                         ) {
-                            Text("Voltar para configuração")
+                            Text("Voltar ao app")
                         }
                         OutlinedButton(
                             modifier = Modifier.fillMaxWidth(),
@@ -215,7 +242,7 @@ private fun LockScreen(
                             modifier = Modifier.weight(1f),
                             onClick = onReturnToApp,
                         ) {
-                            Text("Voltar para configuração")
+                            Text("Voltar ao app")
                         }
                         OutlinedButton(
                             modifier = Modifier.weight(1f),
