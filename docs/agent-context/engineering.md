@@ -4,8 +4,8 @@
 
 Current values from `app/build.gradle.kts`:
 
-- `versionName = "0.1.0"`
-- `versionCode = 1`
+- `versionName = "0.1.1"`
+- `versionCode = 2`
 - `applicationId = "com.larissa.socialcontrol"`
 - `minSdk = 29`
 - `targetSdk = 36`

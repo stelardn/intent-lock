@@ -4,8 +4,8 @@ Intent Lock is an Android app that intercepts distracting app launches and route
 
 ## Current version
 
-- App version: `0.1.0`
-- Version code: `1`
+- App version: `0.1.1`
+- Version code: `2`
 - Current application ID: `com.larissa.socialcontrol`
 
 ## What the app does today
