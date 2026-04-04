@@ -14,9 +14,10 @@ Current values from `app/build.gradle.kts`:
 Current build outputs:
 
 - debug APK: `app/build/outputs/apk/debug/app-debug.apk`
-- release APK: `app/build/outputs/apk/release/app-release-unsigned.apk`
+- release APK: `app/build/outputs/apk/release/app-release.apk` when release signing is configured
+- unsigned fallback APK: `app/build/outputs/apk/release/app-release-unsigned.apk` when release signing is not configured
 
-The release APK is currently unsigned.
+The GitHub Actions pipeline expects release signing secrets so it can publish an installable release APK.
 
 ## UI and copy guidance
 
@@ -33,7 +34,6 @@ When editing UI:
 - The package name is still `com.larissa.socialcontrol`.
 - Some naming still reflects earlier project naming and may not match the final brand.
 - `AppConfig.kt` now mainly holds shared limits and debounce/default values.
-- The current release build is unsigned.
 
 ## Specs and forward-looking documents
 

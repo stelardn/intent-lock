@@ -10,3 +10,4 @@ app/build/
 .claude/
 .cursor/
 .windsurf/
+.env

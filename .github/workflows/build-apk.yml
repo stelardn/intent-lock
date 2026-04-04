@@ -6,12 +6,14 @@ on:
       - main
     paths-ignore:
       - docs/**
-      - .github/workflows/build-apk.yml
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-release-apk:
-    name: Build release APK artifact
+    name: Build and publish release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -36,13 +38,69 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Read app version
+        id: version
+        run: |
+          version_name=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -n1)
+          version_code=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n1)
+          if [ -z "$version_name" ] || [ -z "$version_code" ]; then
+            echo "Could not read version metadata from app/build.gradle.kts" >&2
+            exit 1
+          fi
+
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v${version_name}-build.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Decode release keystore
+        env:
+          INTENTLOCK_RELEASE_KEYSTORE_BASE64: ${{ secrets.INTENTLOCK_RELEASE_KEYSTORE_BASE64 }}
+          INTENTLOCK_RELEASE_STORE_PASSWORD: ${{ secrets.INTENTLOCK_RELEASE_STORE_PASSWORD }}
+          INTENTLOCK_RELEASE_KEY_ALIAS: ${{ secrets.INTENTLOCK_RELEASE_KEY_ALIAS }}
+          INTENTLOCK_RELEASE_KEY_PASSWORD: ${{ secrets.INTENTLOCK_RELEASE_KEY_PASSWORD }}
+        run: |
+          for secret_name in \
+            INTENTLOCK_RELEASE_KEYSTORE_BASE64 \
+            INTENTLOCK_RELEASE_STORE_PASSWORD \
+            INTENTLOCK_RELEASE_KEY_ALIAS \
+            INTENTLOCK_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!secret_name}" ]; then
+              echo "Missing required secret: $secret_name" >&2
+              exit 1
+            fi
+          done
+
+          echo "$INTENTLOCK_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/intentlock-release.keystore"
+
       - name: Build release APK
+        env:
+          INTENTLOCK_RELEASE_STORE_FILE: ${{ runner.temp }}/intentlock-release.keystore
+          INTENTLOCK_RELEASE_STORE_PASSWORD: ${{ secrets.INTENTLOCK_RELEASE_STORE_PASSWORD }}
+          INTENTLOCK_RELEASE_KEY_ALIAS: ${{ secrets.INTENTLOCK_RELEASE_KEY_ALIAS }}
+          INTENTLOCK_RELEASE_KEY_PASSWORD: ${{ secrets.INTENTLOCK_RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: intentlock-release-unsigned-apk
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          name: intentlock-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: IntentLock ${{ steps.version.outputs.version_name }} build ${{ github.run_number }}
+          body: |
+            APK assinado gerado automaticamente pelo pipeline.
+
+            Nome da versão: `${{ steps.version.outputs.version_name }}`
+            Código da versão: `${{ steps.version.outputs.version_code }}`
+            Commit: `${{ github.sha }}`
+          prerelease: true
+          generate_release_notes: true
+          overwrite_files: true
+          files: app/build/outputs/apk/release/app-release.apk

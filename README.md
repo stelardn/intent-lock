@@ -63,9 +63,17 @@ Generate a release APK with:
 
 Output:
 
-- `app/build/outputs/apk/release/app-release-unsigned.apk`
+- `app/build/outputs/apk/release/app-release.apk` when release signing is configured
+- `app/build/outputs/apk/release/app-release-unsigned.apk` when release signing is not configured
 
-The current release build is generated as `unsigned`. A release keystore is required before distributing the APK outside development use.
+Local signing can come from environment variables or from a root `.env` file with:
+
+- `INTENTLOCK_RELEASE_KEYSTORE_BASE64`
+- `INTENTLOCK_RELEASE_STORE_PASSWORD`
+- `INTENTLOCK_RELEASE_KEY_ALIAS`
+- `INTENTLOCK_RELEASE_KEY_PASSWORD`
+
+The GitHub Actions workflow uses the same values as repository secrets and publishes the signed APK to GitHub Releases.
 
 ## Device setup
 
