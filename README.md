@@ -75,6 +75,15 @@ Local signing can come from environment variables or from a root `.env` file wit
 
 The GitHub Actions workflow uses the same values as repository secrets and publishes the signed APK to GitHub Releases.
 
+## Install on device
+
+When installing the APK manually on Android 13+ or Samsung devices:
+
+1. Install the APK from your preferred source app.
+2. If Android blocks Accessibility by default, open `Settings` -> `Apps` -> `Intent Lock` -> `⋮` -> `Allow restricted settings`.
+3. If Google Play Protect blocks the APK, open `Play Store` -> profile icon -> `Play Protect` -> `Settings` and temporarily disable app scanning.
+4. If installation or permission setup is blocked on Samsung, temporarily disable `Settings` -> `Security and privacy` -> `Auto Blocker`.
+
 ## Device setup
 
 For the app to work correctly on a device, enable:
